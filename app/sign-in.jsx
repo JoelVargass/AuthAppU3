@@ -9,7 +9,6 @@ import {
   ActivityIndicator 
 } from "react-native";
 import { useState } from "react";
-
 import { useSession } from "../utils/ctx";
 import { StatusBar } from "expo-status-bar";
 
@@ -31,10 +30,10 @@ export default function SignIn() {
         setErrorMessage(response.message);
         return;
       }
-      console.log("🔓 Usuario autenticado");
+      console.log("Usuario autenticado");
       router.replace("/");
     } catch (error) {
-      console.warn("❌ Error en inicio de sesión:", error.message);
+      console.warn("Error en inicio de sesión:", error.message);
       setErrorMessage("Error al iniciar sesión");
     } finally {
       setLoading(false);

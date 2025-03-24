@@ -12,7 +12,7 @@ const getSession = async () => {
 };
 
 const api = axios.create({
-  baseURL: "https://maximum-shrew-firmly.ngrok-free.app",
+  baseURL: "https://a27a-2806-250-c0c-ba7f-5db8-c1e0-bd58-583c.ngrok-free.app",
   timeout: 10000,
 });
 
@@ -34,7 +34,7 @@ api.interceptors.request.use(
 
 export const login = async (username, password) => {
   try {
-    console.log("📡 Enviando login con:", { username, password });
+    console.log("Enviando login con:", { username, password });
 
     const response = await api.post("/auth", { username, password });
     console.log("Respuesta del servidor:", response.data);

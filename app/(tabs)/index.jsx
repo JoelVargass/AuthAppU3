@@ -1,93 +1,173 @@
-import { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from "react-native";
-import { useRouter } from "expo-router";
-import { useSession } from "../../utils/ctx";
-import { getProfile, logout } from "../../utils/api";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { useState, useEffect, useRef } from 'react';
+import { Text, View, Button, Platform } from 'react-native';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
-export default function Main() {
-  const { session, signOut } = useSession();
-  const router = useRouter();
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
+export default function App() {
+  
+  const [expoPushToken, setExpoPushToken] = useState('');
+  const [channels, setChannels] = useState([]);
+  const [notification, setNotification] = useState(null);
+  const notificationListener = useRef();
+  const responseListener = useRef();
 
   useEffect(() => {
-    if (!loading && !session) {
-      router.replace("/sign-in");
+    registerForPushNotificationsAsync().then(token => {
+      if (token) setExpoPushToken(token);
+    });
+
+    if (Platform.OS === 'android') {
+      Notifications.getNotificationChannelsAsync().then(value => setChannels(value ?? []));
     }
-  }, [loading, session]);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (session) {
-        try {
-          const data = await getProfile();
-          if (!data || !data.user || !data.user.email) {
-            throw new Error("Perfil incompleto o no disponible");
-          }
-          setProfile(data.user);
-        } catch (error) {
-          console.error("Error obteniendo perfil:", error.message || error);
-          Alert.alert("Error", "No se pudo obtener tu perfil. Inténtalo más tarde.");
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        setLoading(false);
+    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+      setNotification(notification);
+    });
+
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log(response);
+    });
+
+    return () => {
+      if (notificationListener.current) {
+        Notifications.removeNotificationSubscription(notificationListener.current);
+      }
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
-
-    fetchProfile();
-  }, [session]);
-
-  const handleSignOut = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.error("Error cerrando sesión:", error);
-    } finally {
-      signOut();
-      router.replace("/sign-in");
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007BFF" />
-      </View>
-    );
-  }
+  }, []);
 
   return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'space-around',
+      }}>
+      <Text>Your expo push token: {expoPushToken}</Text>
+      <Text>{`Channels: ${JSON.stringify(
+        channels.map(c => c.id),
+        null,
+        2
+      )}`}</Text>
+      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <Text>Title: {notification?.request?.content?.title || ''} </Text>
+        <Text>Body: {notification?.request?.content?.body || ''}</Text>
+        <Text>Data: {notification ? JSON.stringify(notification.request.content.data) : ''}</Text>
+      </View>
+      <Button
+        title="Press to schedule a notification"
+        onPress={async () => {
+          await schedulePushNotification();
+        }}
+      />
+    </View>
+  );
+}
+
+async function schedulePushNotification() {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "You've got mail! 📬",
+      body: 'Here is the notification body',
+      data: { data: 'goes here', test: { test1: 'more data' } },
+      sound: 'default',
+    },
+    shouldPlaySound: true,
+    trigger: { type: 'timeIntervall', seconds: 10, repeats: false }
+  });
+}
+
+async function registerForPushNotificationsAsync() {
+  let token;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('myNotificationChannel', {
+      name: 'A channel is needed for the permissions prompt to appear',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      alert('Failed to get push token for push notification!');
+      return;
+    }
+
+    try {
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+      if (!projectId) {
+        throw new Error('Project ID not found');
+      }
+      token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+      console.log(token);
+    } catch (e) {
+      token = `${e}`;
+    }
+  } else {
+    alert('Must use physical device for Push Notifications');
+  }
+
+  return token;
+}
+
+
+/*
+import { View, Text, StatusBar, Button, StyleSheet } from "react-native";
+import { Stack } from "expo-router";
+import { useSession } from "../../utils/ctx";
+import { useEffect, useState } from "react";
+import DatabaseContext from "../../utils/dbctx";
+import { useContext } from "react";
+import api from "../../utils/api";
+export default function Main() {
+  const { tasks, addItem, updateItem, deleteItem } =
+    useContext(DatabaseContext);
+  const { signOut } = useSession();
+  const [isEnabled, setIsEnabled] = useState(false);
+  const toggleSwitch = () => setIsEnabled((previousState) => !previousState);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    api.get("/").then((response) => {
+      setMessage(response.data.message);
+    })
+    .catch((error) => {
+      console.error("Error obteniendo el mensaje:", error
+      );
+    }
+    );  
+  }, []);
+  return (
     <View style={styles.container}>
-      <Text style={styles.title}>Bienvenido</Text>
-
-      {session && profile ? (
-        <View style={styles.profileContainer}>
-          <Text style={styles.profileText}>
-            <Ionicons name="id-card-outline" size={20} color="#000" />{" "}
-            <Text style={styles.bold}>Nombre:</Text> {profile.name} {profile.lastName}
-          </Text>
-          <Text style={styles.profileText}>
-            <Ionicons name="person-circle-outline" size={20} color="#000" />{" "}
-            <Text style={styles.bold}>Usuario:</Text> {profile.username}
-          </Text>
-          <Text style={styles.profileText}>
-            <Ionicons name="mail-outline" size={20} color="#000" />{" "}
-            <Text style={styles.bold}>Correo:</Text> {profile.email}
-          </Text>
-        </View>
-      ) : (
-        <Text style={styles.noSession}>No se pudo cargar el perfil.</Text>
-      )}
-
-      {session && (
-        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={24} color="#fff" />
-          <Text style={styles.logoutText}>Cerrar Sesión</Text>
-        </TouchableOpacity>
-      )}
+      <StatusBar backgroundColor={"gray"} />
+      <Stack.Screen
+        options={{
+          title: "Todo App",
+          headerRight: () => <Button title="Logout" onPress={signOut} />,
+        }}
+      />
+      <View>
+        <Text>Auth App: {message}</Text>
+      </View>
     </View>
   );
 }
@@ -95,61 +175,10 @@ export default function Main() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f4f4f9",
-    padding: 20,
-    alignItems: "center",
-  },
-  loadingContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 20,
-    color: "#333",
-  },
-  profileContainer: {
-    width: "100%",
-    maxWidth: 350,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  profileText: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: "#333",
-  },
-  bold: {
-    fontWeight: "bold",
-  },
-  noSession: {
-    fontSize: 16,
-    color: "#888",
-    fontStyle: "italic",
-    marginBottom: 20,
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FF4D4D",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  logoutText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-    marginLeft: 8,
+    paddingHorizontal: 16,
   },
 });
+
+*/
